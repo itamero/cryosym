@@ -1,0 +1,19 @@
+# Ignore PyCharm settings
+.idea/*
+*.iml
+
+# Ignore Python cache and build artifacts
+__pycache__/
+*.egg-info/
+src/logs/*
+*.pyc
+.venv/*
+.claude/
+
+# Ignore large data files
+*.pkl
+*.mrc
+*.mrcs
+*.npy
+*.log
+*.png

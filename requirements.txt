@@ -1,0 +1,11 @@
+numpy==2.2.4 # Necessary for EMalign
+scipy==1.17.1
+pandas==3.0.1
+aspire==0.14.2
+EMalign==1.0.5
+pyfftw==0.15.1
+mrcfile==1.5.4
+matplotlib==3.10.8
+tqdm==4.67.3
+PyQt5==5.15.11
+typing_extensions==4.15.0
