@@ -82,6 +82,7 @@ Pre-configured reference volumes from the [Electron Microscopy Data Bank (EMDB)]
 | $C_4$ | 5778 | | $D_7$ | 6287 |
 | $C_5$ | 3645 | | $D_8$ | 9571 |
 | $C_{11}$ | 6458 | | $D_{10}$ | 10920 |
+
 The table above lists only the symmetries with pre-configured volumes. You can also supply a custom EMD ID.
 
 
