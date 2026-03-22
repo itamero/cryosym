@@ -127,7 +127,7 @@ def mean_angular_distance_sym(rots, rots_gt, sym):
                 best_rots = rots_transformed.copy()
                 best_config = (j, coset_rep_idx)
 
-    print(f"Optimal Found: j={best_config[0]}, coset_idx={best_config[1]}, Min Avg Dist={min_avg_dist}")
+    logger.info(f"Optimal Found: j={best_config[0]}, coset_idx={best_config[1]}, Min Avg Dist={min_avg_dist}")
     return best_rots
 
 

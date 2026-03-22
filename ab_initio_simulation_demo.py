@@ -42,9 +42,6 @@ def ab_initio_simulation_demo(
     if resolution == "low":
         in_plane_rotation = 5
         viewing_direction = 0.996
-    if resolution == "vlow":
-        in_plane_rotation = 8
-        viewing_direction = 0.99
 
     og_vol = Volume.load(volume_file)
 
@@ -158,9 +155,8 @@ def ab_initio_simulation_demo(
 if __name__ == "__main__":
 
     for resolution in ['low']:
-        for num_imgs in [50]:
-            for sym in ['T', 'O', 'I', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8', 'D10', 'D11', 'D12', 'D13']:
-            #for sym in ['O']:
+        for num_imgs in [20]:
+            for sym in ['O']:
                 ab_initio_simulation_demo(
                             sym=sym,
                             num_imgs=num_imgs,
@@ -169,7 +165,7 @@ if __name__ == "__main__":
                             ds_reconstruct=121,
                             resolution=resolution,
                             interactive=True,
-                            gui=True,
+                            gui=False,
                         )
 
 

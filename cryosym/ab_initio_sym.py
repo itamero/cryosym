@@ -141,17 +141,10 @@ def cryo_abinitio_sym(
     logger.info("Done computing the relative rotations\n")
     logger.info(f"Upper block of relative rotations:\n\n{est_rel_rots[:14,:14]}\n\n")
 
-    np.set_printoptions(
-        precision=2,
-        suppress=True,
-        linewidth=np.inf,  # prevent line breaks
-        threshold=np.inf  # prevent summarization with "..."
-    )
-
     if true_rotations is not None:
         logger.info("Evaluating relative rotations against ground truth rotations...\n")
         rel_rots_dists = angular_distance_rel_rots(est_rel_rots, true_rotations, sym, cache_file_name)
-        logger.info(f"Upper block of min angular distances: \n\n{rel_rots_dists}\n\n")
+        logger.info(f"Upper block of min angular distances: \n\n{rel_rots_dists[:14,:14]}\n\n")
 
     ##################################
     # Step 5: Rotation estimation    #
@@ -165,7 +158,7 @@ def cryo_abinitio_sym(
     ##########################################
 
     if true_rotations is not None:
-        logger.info("Compare with known rotations")
+        logger.info("Comparing with known ground truth rotations")
         rots = mean_angular_distance_sym(rots, true_rotations, sym)
 
     logging.info(f"Cache selection data:\n {pd.DataFrame(cache_selected_data).T.to_string()}")

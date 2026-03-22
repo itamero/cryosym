@@ -77,17 +77,6 @@ def candidate_rotations_set(group_rots, resolution, viewing_direction, in_plane_
     :param group_rots:          Symmetry group elements: ((group order) x 3 x 3) numpy array
                                 used for filtering the candidate rotations set.
     :param resolution:          Number of samples per 2pi  (see gen_rotations_grid for more details)
-                                With the standard viewing_direction=0.996 and in_plane_rotation=5
-                                the following table shows the number of rotations generated
-                                by resolution:
-
-                                Resolution | Grid Rotations  | Rotations After T/O Filtering
-                                -----------|-----------------|------------------------------
-                                50         | 4,484           | 1,195 (T),    724   (O)
-                                75         | 15,236          | 1,541 (T),    854   (O)
-                                100        | 39,365          | 1,704 (T),    887   (O)
-                                150        | 129,835         | 2,084 (T),    1,068 (O)
-
                                 Default resolution is 150
     :param viewing_direction:   The viewing angle threshold
     :param in_plane_rotation:   The inplane rotation degree threshold
@@ -97,10 +86,7 @@ def candidate_rotations_set(group_rots, resolution, viewing_direction, in_plane_
     candidates_set = gen_rotations_grid(
         resolution
     )  # Generate approximately equally spaced rotations with specified resolution
-    logging.info(
-        "With resolution %d, a set of %d rotations was originally generated.",
-        resolution, len(candidates_set)
-    )
+    logging.info("With resolution %d, a set of %d rotations was originally generated.",resolution, len(candidates_set))
     close_idx = np.zeros(len(candidates_set), dtype=bool)
 
     # Precompute viewing directions (third column of each rotation matrix)
@@ -149,7 +135,7 @@ def candidate_rotations_set(group_rots, resolution, viewing_direction, in_plane_
     cache_rots = candidates_set[~close_idx]
 
     logging.info(
-        "With resolution %d, after filtering, a set of %d rotations was generated.\n",
+        "With resolution %d, after filtering, a set of %d rotations remain.\n",
         resolution, len(cache_rots)
     )
     return cache_rots

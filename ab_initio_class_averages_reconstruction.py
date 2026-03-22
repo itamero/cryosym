@@ -59,9 +59,6 @@ def class_averages_reconstruction(
     og_vol = Volume.load(ref_vol_path)
     voxel_size = (og_vol.resolution * og_vol.pixel_size) / ds_reconstruct
 
-    if resolution == "vhigh":
-        in_plane_rotation = 1.8
-        viewing_direction = 0.9988
     if resolution == "high":
         in_plane_rotation = 2
         viewing_direction = 0.9985
@@ -71,9 +68,6 @@ def class_averages_reconstruction(
     if resolution == "low":
         in_plane_rotation = 5
         viewing_direction = 0.996
-    if resolution == "vlow":
-        in_plane_rotation = 8
-        viewing_direction = 0.99
 
     estimated_volume, est_rots = cryo_abinitio_sym(
         sym,
