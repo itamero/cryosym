@@ -154,7 +154,7 @@ def ab_initio_simulation_demo(
 
 if __name__ == "__main__":
 
-    for resolution in ['low']:
+    for resolution in ['mid']:
         for num_imgs in [20]:
             for sym in ['O']:
                 ab_initio_simulation_demo(

@@ -16,4 +16,5 @@ src/logs/*
 *.mrcs
 *.npy
 *.log
-*.png
+data/**/*.png
+!data/gallery/*.png
