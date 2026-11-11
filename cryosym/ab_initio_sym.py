@@ -41,6 +41,7 @@ def cryo_abinitio_sym(
     true_rotations=None,
     voxel_size=None,
     gui = False,
+    return_details=False,
 ):
     """
     Ab-initio reconstruction of a symmetric molecule
@@ -63,8 +64,11 @@ def cryo_abinitio_sym(
     :param cg_max_iterations:   (Optional) Maximum number of iterations for CG in reconstruction.
     :param true_rotations:      (Optional) True rotations of each projection-image to be used for comparison with
                                 The estimated rotations.
+    :param return_details:      (Optional) Also return a dict with the intermediate results: the cache file name,
+                                the pairwise estimates (cache indices) and the voted cache indices.
 
-    :return:                    Estimated reconstruction of the volume (aspire Volume) and estimated rotations (np array)
+    :return:                    Estimated reconstruction of the volume (aspire Volume) and estimated rotations (np array),
+                                followed by the details dict if `return_details` is True
     """
     sym = supported_symmetry_group(sym) # Check provided symmetry type is valid
     if basis not in ("FFB", "Dirac"):
@@ -198,4 +202,11 @@ def cryo_abinitio_sym(
         mrc.update_header_from_data()
     logger.info(f"Volume saved to file: {outvol}")
 
+    if return_details:
+        details = {
+            "cache_file_name": cache_file_name,
+            "est_rel_rots": est_rel_rots,
+            "cache_selected_inds": cache_selected_data["cache_selected_inds"],
+        }
+        return estimated_volume, rots, details
     return estimated_volume, rots

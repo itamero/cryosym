@@ -15,6 +15,8 @@ RECONSTRUCTED_VOLUMES_DIR = PROJECT_ROOT / "data" / "reconstructed_volumes"
 PROJECTIONS_DIR = PROJECT_ROOT / "data" / "projections"
 ROTATIONS_CACHE_DIR = PROJECT_ROOT / "data" / "rotations_cache"
 CLASS_AVERAGES_DIR = PROJECT_ROOT / "data" / "class_averages"
+SNR_EXPERIMENT_DIR = PROJECT_ROOT / "data" / "snr_experiment"
+SNR_SIMULATIONS_DIR = SNR_EXPERIMENT_DIR / "simulations"
 
 # Ensure directories exist (create them if they don't)
 DOWNLOADED_VOLUMES_DIR.mkdir(parents=True, exist_ok=True)
@@ -22,6 +24,8 @@ RECONSTRUCTED_VOLUMES_DIR.mkdir(parents=True, exist_ok=True)
 PROJECTIONS_DIR.mkdir(parents=True, exist_ok=True)
 ROTATIONS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 CLASS_AVERAGES_DIR.mkdir(parents=True, exist_ok=True)
+SNR_EXPERIMENT_DIR.mkdir(parents=True, exist_ok=True)
+SNR_SIMULATIONS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Export emalign utilities for external use
 from src.read_write import read_mrc
