@@ -21,6 +21,7 @@ ref_emd_map = {
     "D7": 6287,
     "D4": 22308,
     "D3": 14803,
+    "D2": 2984,
 }
 class_avg_map = {
     "T": "10389",
@@ -29,6 +30,7 @@ class_avg_map = {
     "D7": "10025",
     "D4": "10502",
     "D3": "12036",
+    "D2": "10061",
 }
 
 def class_averages_reconstruction(

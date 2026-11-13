@@ -10,122 +10,89 @@ from cryosym.group_elements import group_elements
 RUN_DIAGNOSTICS = False
 
 
-def compute_admissible_pairs_mask(R, sym, threshold=1, equator_threshold=7.0):
-    """
-    Pre-compute a boolean mask over rotation pairs (R_i, R_j) from the cache.
+# Allowed candidate pairs of the pairwise maximization (see candidate_pairs_mask), angles in degrees
+ETA = 1.0          # nearly parallel viewing directions modulo G
+PLANE_BAND = 22.0  # band around the planes perpendicular to the axes of axes_U
 
-    mask[i, j] is True if:
-    1. For all group elements G_k: abs(<R_i[:, 2], G_k @ R_j[:, 2]>) < threshold
-    2. R_i and R_j do not both lie near any common equatorial plane (D_n only)
+
+def axes_U(sym):
+    """
+    Unit vectors u with g u = +-u for every g in G (one of each pair +-u), the axes of the coincident common lines
+    lemma: e3 for C_n and D_n with n >= 3, e1, e2, e3 for D2, none for T, O and I.
+
+    :param sym: Symmetry string
+    :return: Array (n_axes, 3)
+    """
+    if sym == "C2":
+        raise NotImplementedError("For C2 every equatorial line is invariant; the candidate set needs a direct test")
+    if sym == "D2":
+        return np.eye(3)
+    if sym[0] in ("C", "D"):
+        return np.array([[0.0, 0.0, 1.0]])
+    return np.zeros((0, 3))
+
+
+def candidate_pairs_mask(R, sym, eta=ETA, eta_a=4.8, eta_p=PLANE_BAND):
+    """
+    Boolean mask of the candidate pairs allowed in the pairwise maximization: mask[r, s] is True if
+    1. |<v_r, g v_s>| < cos(eta) for every g in G (the induced common lines are defined),
+    2. |<v_r, u>| < cos(eta_a) and |<v_s, u>| < cos(eta_a) for every u in axes_U(sym) (neither view is on an axis),
+    3. max(|<v_r, u>|, |<v_s, u>|) > sin(eta_p) for every u in axes_U(sym) (the views are not both within eta_p of
+       the plane perpendicular to u),
+    where v_r, v_s are the viewing directions (third columns) of R[r], R[s].
+
+    On the plane perpendicular to u all the induced common lines coincide, and near it they are too close to be told
+    apart in noisy images, so the score of such a pair reduces to few distinct correlations and noise makes spurious
+    maxima there. The band eta_p is therefore much wider than the grid spacing.
 
     :param R: Rotation cache, numpy array (r_candidates, 3, 3)
-    :param sym: Symmetry string (e.g., 'C1', 'D7')
-    :param threshold: Max absolute inner product between viewing directions (default 1)
-    :param equator_threshold: Angular threshold in degrees for equator proximity (default 7.0)
+    :param sym: Symmetry string
+    :param eta: Angle in degrees for nearly parallel viewing directions modulo G
+    :param eta_a: Angle in degrees around the axes of axes_U(sym)
+    :param eta_p: Angle in degrees around the planes perpendicular to them
     :return: Boolean mask (r_candidates, r_candidates)
     """
-    logging.info("Pre-computing viewing direction mask...")
-    G = group_elements(sym)
-    r_candidates = R.shape[0]
+    views = R[:, :, 2]
+    cos_eta = np.cos(np.radians(eta))
+    mask = np.ones((len(R), len(R)), dtype=bool)
+    for g in group_elements(sym):  # one group element at a time, to avoid an (r, r, |G|) array
+        mask &= np.abs(views @ (g @ views.T)) < cos_eta
+    n_defined = mask.sum()
 
-    all_views = R[:, :, 2]
+    proj = np.abs(views @ axes_U(sym).T)  # (r_candidates, n_axes)
+    on_axis = np.any(proj >= np.cos(np.radians(eta_a)), axis=1)
+    mask &= ~on_axis[:, np.newaxis] & ~on_axis[np.newaxis, :]
+    near_plane = proj <= np.sin(np.radians(eta_p))
+    for u in range(proj.shape[1]):
+        mask &= ~(near_plane[:, u][:, np.newaxis] & near_plane[:, u][np.newaxis, :])
 
-    G_expanded = G[:, np.newaxis, :, :]
-    R_expanded = R[np.newaxis, :, :, :]
-    R_transformed = G_expanded @ R_expanded
-    views_j_transformed = R_transformed[:, :, :, 2]
-
-    # Shape: (r_candidates, r_candidates, n_group)
-    abs_inner_prods = np.abs(np.einsum('id, gjd -> ijg', all_views, views_j_transformed))
-    max_prods = np.max(abs_inner_prods, axis=2)
-    view_mask = max_prods < threshold
-
-    # Apply equator filtering for D_n symmetry
-    if sym.startswith('D'):
-        n = int(sym[1:])
-        logging.info(f"Applying D_{n} equator filtering with threshold {equator_threshold}°...")
-
-        eq_class = mark_all_equators_dn(all_views.T, equator_threshold, n)
-
-        # For each pair (i, j), check if they share proximity to any equator
-        shared_equators = eq_class[:, np.newaxis, :] & eq_class[np.newaxis, :, :]
-        are_both_equators = np.any(shared_equators, axis=2)
-        view_mask = view_mask & ~are_both_equators
-
-        num_equator_filtered = np.sum(are_both_equators)
-        logging.info(f"Filtered out {num_equator_filtered} pairs due to shared equator proximity")
-
-    num_allowed = np.sum(view_mask)
-    total_pairs = r_candidates * r_candidates
+    total_pairs = mask.size
     logging.info(
-        f"...viewing direction mask complete. "
-        f"{num_allowed} / {total_pairs} pairs ({num_allowed / total_pairs:.2%}) "
-        f"have distinct views."
+        f"Candidate pairs (eta = {eta} deg, eta_a = {eta_a:.2f} deg, eta_p = {eta_p:.2f} deg): "
+        f"{mask.sum()} / {total_pairs} ({mask.sum() / total_pairs:.2%}); excluded "
+        f"{1 - n_defined / total_pairs:.2%} as nearly parallel and {(n_defined - mask.sum()) / total_pairs:.2%} by the "
+        f"axes {axes_U(sym).tolist()} ({on_axis.sum()} candidates on an axis)"
     )
-    return view_mask
+    return mask
 
 
-def mark_all_equators_dn(sphere_grid, eq_filter_angle, n):
-    """
-    Mark viewing directions near equatorial planes for D_n symmetry.
-
-    This is a Python translation of the MATLAB markAllEquatorsDn function.
-
-    :param sphere_grid: Viewing directions, shape (3, nrot)
-    :param eq_filter_angle: Angular threshold in degrees
-    :param n: Degree of dihedral symmetry (D_n)
-    :return: Boolean array (nrot, n+1) indicating proximity to each equator
-    """
-    nrot = sphere_grid.shape[1]
-    angular_dists = np.zeros((nrot, n + 1))
-
-    # Distance to primary equator
-    proj_xy = sphere_grid.copy()
-    proj_xy[2, :] = 0
-    norms_xy = np.linalg.norm(proj_xy[:2, :], axis=0)
-    norms_xy[norms_xy == 0] = 1  # Avoid division by zero
-    proj_xy = proj_xy / norms_xy[np.newaxis, :]
-    angular_dists[:, 0] = np.abs(np.sum(sphere_grid * proj_xy, axis=0))
-
-    # Distances to n C2 rotation axes
-    a = np.array([1.0, 0.0, 0.0])
-    rotation_angle = 2 * np.pi / n
-
-    for i in range(1, n + 1):
-        dots = np.sum(sphere_grid * a[:, np.newaxis], axis=0)
-        current_proj = sphere_grid - dots[np.newaxis, :] * a[:, np.newaxis]
-
-        proj_norms = np.linalg.norm(current_proj, axis=0)
-        proj_norms[proj_norms <= 1e-10] = 1
-        current_proj = current_proj / proj_norms[np.newaxis, :]
-
-        angular_dists[:, i] = np.abs(np.sum(sphere_grid * current_proj, axis=0))
-
-        # Rotate axis for next iteration
-        cos_theta = np.cos(rotation_angle)
-        sin_theta = np.sin(rotation_angle)
-        a = np.array([
-            cos_theta * a[0] - sin_theta * a[1],
-            sin_theta * a[0] + cos_theta * a[1],
-            a[2]
-        ])
-
-    eq_min_dist = np.cos(eq_filter_angle * np.pi / 180)
-    eq_class = angular_dists > eq_min_dist
-
-    return eq_class
-
-def estimate_relative_rotations(pf, cache_file_name, sym, true_rotations=None):
+def estimate_relative_rotations(pf, cache_file_name, sym, true_rotations=None, eta=ETA, eta_a=None, eta_p=PLANE_BAND):
     """
     Estimate relative rotations between all pairs of projection images.
 
     For each pair (i, j), find cache rotation indices (Rij, Rji) that best explain
     the common lines between the polar Fourier transforms of images i and j.
 
+    The maximization is over the candidate pairs of candidate_pairs_mask.
+
     :param pf: Polar Fourier transform of images, array (n_images, n_theta, n_rad).
-    :param cache_file_name: Path to pickle file containing [R, l_self_ind, l_ij_ji_ind, _, _].
+    :param cache_file_name: Path to pickle file containing [R, l_self_ind, l_ij_ji_ind, resolution, _].
     :param sym: Symmetry string (e.g., 'C1', 'D7').
     :param true_rotations: Ground truth rotations (unused, reserved for diagnostics).
+    :param eta: Angle in degrees for nearly parallel views (see candidate_pairs_mask).
+    :param eta_a: Angle in degrees around the axes of axes_U, defaults to twice the grid spacing
+                  360 / resolution of the cache.
+    :param eta_p: Angle in degrees around the planes perpendicular to those axes.
     :return: Integer array (n_images, n_images) of cache rotation indices.
     """
     if RUN_DIAGNOSTICS:
@@ -136,11 +103,12 @@ def estimate_relative_rotations(pf, cache_file_name, sym, true_rotations=None):
     n_images, n_r = pf.shape[0], pf.shape[2]
 
     with open(cache_file_name, "rb") as f:
-        R, l_self_ind, l_ij_ji_ind, _, _ = pickle.load(f)
+        R, l_self_ind, l_ij_ji_ind, resolution, _ = pickle.load(f)
 
     r_candidates = len(R)
 
-    view_mask_global = compute_admissible_pairs_mask(R, sym)
+    eta_a = 2 * 360 / resolution if eta_a is None else eta_a
+    view_mask_global = candidate_pairs_mask(R, sym, eta, eta_a, eta_p)
 
     est_rel_rots = np.zeros((n_images, n_images))
 

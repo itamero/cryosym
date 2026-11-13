@@ -14,7 +14,7 @@ from aspire.basis import FFBBasis3D, DiracBasis3D
 
 from cryosym.group_elements import supported_symmetry_group
 from cryosym.cryo_create_rotations_cache import cryo_create_rotations_cache, check_cache_file
-from cryosym.estimate_relative_rotations import estimate_relative_rotations
+from cryosym.estimate_relative_rotations import ETA, PLANE_BAND, estimate_relative_rotations
 from cryosym.utils import mean_angular_distance_sym, load_projections_downsample, angular_distance_rel_rots
 from cryosym.projection_guis.projection_gui_simulation import create_projection_viewer_simulation
 from cryosym.projection_guis.projection_gui_class_avgs import create_projection_viewer_class_avgs
@@ -42,6 +42,9 @@ def cryo_abinitio_sym(
     voxel_size=None,
     gui = False,
     return_details=False,
+    eta=ETA,
+    eta_a=None,
+    eta_p=PLANE_BAND,
 ):
     """
     Ab-initio reconstruction of a symmetric molecule
@@ -66,6 +69,13 @@ def cryo_abinitio_sym(
                                 The estimated rotations.
     :param return_details:      (Optional) Also return a dict with the intermediate results: the cache file name,
                                 the pairwise estimates (cache indices) and the voted cache indices.
+    :param eta:                 (Optional) Angle in degrees for nearly parallel views, whose candidate pairs are
+                                not allowed in the pairwise maximization. Default 1.
+    :param eta_a:               (Optional) Angle in degrees around the axes of the coincident common lines lemma;
+                                candidates this close to an axis are not allowed. Default twice the grid spacing,
+                                2 * 360 / rotation_resolution.
+    :param eta_p:               (Optional) Angle in degrees around the planes perpendicular to those axes; pairs
+                                with both views this close to such a plane are not allowed. Default 22.
 
     :return:                    Estimated reconstruction of the volume (aspire Volume) and estimated rotations (np array),
                                 followed by the details dict if `return_details` is True
@@ -140,7 +150,7 @@ def cryo_abinitio_sym(
     logger.info("Computing all relative rotations...\n")
 
     est_rel_rots = estimate_relative_rotations(
-        pf_full, cache_file_name, sym, true_rotations=true_rotations,
+        pf_full, cache_file_name, sym, true_rotations=true_rotations, eta=eta, eta_a=eta_a, eta_p=eta_p,
     )
     logger.info("Done computing the relative rotations\n")
     logger.info(f"Upper block of relative rotations:\n\n{est_rel_rots[:14,:14]}\n\n")
