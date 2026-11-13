@@ -84,14 +84,14 @@ def reconstruct(src, rots, sym, ds, maxiter=30):
 
 
 def run(sym, n_imgs=20, seed=0, snr=None, ds=70, step=5.0, n_theta=360, eta_p=22.0, fsc=False, ds_rec=120, n_jobs=-1,
-        tag=""):
+        tag="", radial_power=0.0):
     n = int(sym[1:])
     vol, src, rots_gt = simulate(sym, n_imgs, seed, snr)
     sym_corr = symmetry_check(vol, n)
     logger.info(f"{sym}: volume {vol.resolution}^3, correlation with its rotation by 2pi/{n} about z: {sym_corr:.4f}")
 
     t0 = time.time()
-    pf = cyclic.polar_ft(src.images[:].downsample(ds), n_theta=n_theta)
+    pf = cyclic.polar_ft(src.images[:].downsample(ds), n_theta=n_theta, radial_power=radial_power)
     rots, info = cyclic.estimate_rotations_cn(pf, n, step=step, eta_p=eta_p, n_jobs=n_jobs)
     t_est = time.time() - t0
 
@@ -99,6 +99,7 @@ def run(sym, n_imgs=20, seed=0, snr=None, ds=70, step=5.0, n_theta=360, eta_p=22
     rots_reg, err, glob = cyclic.register_cn(rots, rots_gt, n)
     res = {
         "sym": sym, "n_imgs": n_imgs, "seed": seed, "snr": snr, "ds": ds, "step": step, "eta_p": eta_p, "tag": tag,
+        "radial_power": radial_power,
         "sym_corr": sym_corr, **diag,
         "ev_J": [float(x) for x in info["ev_J"]], "ev_F": [float(x) for x in info["ev_F"]],
         "ev_alpha": [float(x) for x in info["ev_alpha"]],
@@ -133,6 +134,7 @@ if __name__ == "__main__":
     p.add_argument("--eta_p", type=float, default=22.0)
     p.add_argument("--fsc", action="store_true")
     p.add_argument("--tag", default="")
+    p.add_argument("--radial_power", type=float, default=0.0)
     args = p.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s", force=True)
     run(**vars(args))

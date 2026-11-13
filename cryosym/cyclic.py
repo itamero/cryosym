@@ -359,14 +359,23 @@ def synchronize(pf, beta, gamma, n, n_fine=None, weighted=False):
 # ---------------------------------------------------------------------------------------------------------------------
 # Full pipeline
 # ---------------------------------------------------------------------------------------------------------------------
-def polar_ft(images, n_theta=360, n_r_perc=50):
-    """Polar Fourier transform with normalized rays, as in ab_initio_sym: (n_images, n_theta, n_r)."""
+def polar_ft(images, n_theta=360, n_r_perc=50, radial_power=0.0):
+    """
+    Polar Fourier transform with normalized rays, as in ab_initio_sym: (n_images, n_theta, n_r).
+
+    :param radial_power: The sample of every ray at radial frequency xi is multiplied by xi^radial_power before the
+                         normalization. With 0 (as in ab_initio_sym) the rays are dominated by their low frequencies
+                         and unrelated rays of clean images have correlations of 0.85-0.95; with 1 they drop to
+                         0.3-0.6 while the common lines stay above 0.99.
+    """
     from aspire.operators import PolarFT
 
     img_size = images.shape[-1]
     pft = PolarFT(img_size, nrad=math.ceil(img_size * n_r_perc / 100), ntheta=n_theta)
     pf = pft.transform(images)
     pf[..., 0] = 0
+    if radial_power:
+        pf = pf * np.arange(pf.shape[-1], dtype=pf.real.dtype) ** radial_power
     pf /= np.linalg.norm(pf, axis=2, ord=2)[..., np.newaxis]
     return PolarFT.half_to_full(pf)
 
@@ -430,3 +439,28 @@ def orbit_error(beta, gamma, rots_gt):
     c1 = np.abs(np.sum(v * v_gt, axis=-1))
     c2 = np.abs(np.sum(v * (v_gt * np.array([1, 1, -1])), axis=-1))
     return np.degrees(np.arccos(np.clip(np.maximum(c1, c2), -1, 1)))
+
+
+def true_candidate(grid, Ri, Rj):
+    """
+    The candidate (beta_r, gamma_r, beta_s, gamma_s, theta) of the grid's fundamental domain equivalent to the true
+    pair (Ri, Rj), as continuous angles and as the nearest grid indices.
+    """
+    n = grid.n
+    ai, bi, gi = to_euler(Ri)
+    aj, bj, gj = to_euler(Rj)
+    theta = aj - ai
+    if bi > np.pi / 2:  # F
+        bi, gi, bj, gj, theta = np.pi - bi, gi + np.pi, np.pi - bj, gj + np.pi, -theta
+    if gi % (2 * np.pi) >= np.pi:  # J
+        gi, gj = gi + np.pi, gj + np.pi
+    gi, gj, theta = gi % (2 * np.pi), gj % (2 * np.pi), theta % (2 * np.pi / n)
+    cont = np.array([bi, gi, bj, gj, theta])
+    idx = (
+        int(np.argmin(np.abs(grid.beta[: grid.n_br] - bi))),
+        int(np.round(gi / np.radians(grid.step))) % grid.n_gr,
+        int(np.argmin(np.abs(grid.beta - bj))),
+        int(np.round(gj / np.radians(grid.step))) % grid.n_g,
+        int(np.round(theta / (2 * np.pi / (n * grid.K)))) % grid.K,
+    )
+    return cont, idx
