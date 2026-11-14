@@ -20,6 +20,7 @@ from cryosym.projection_guis.projection_gui_simulation import create_projection_
 from cryosym.projection_guis.projection_gui_class_avgs import create_projection_viewer_class_avgs
 from cryosym.config import ROTATIONS_CACHE_DIR
 from cryosym.estimate_rotations import estimate_rotations
+from cryosym.cyclic import estimate_rotations_cn, register_cn
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
@@ -45,12 +46,18 @@ def cryo_abinitio_sym(
     eta=ETA,
     eta_a=None,
     eta_p=PLANE_BAND,
+    cyclic_step=5.0,
 ):
     """
     Ab-initio reconstruction of a symmetric molecule
 
 
-    :param sym:                 Symmetry type. One of 'Cn','Dn','T','O','I' where n>1
+    For 'Dn', 'T', 'O', 'I' the orientations are estimated from a cache of candidate rotations (pairwise
+    maximization, vote, synchronization over the finite group (N(G)/G) x Z_2). For 'Cn', whose normalizer is infinite,
+    they are estimated by cryosym.cyclic (vote on the normalizer orbits, synchronization over (O(2)/C_n) x Z_2); no
+    cache is used, and rotation_resolution, viewing_direction and in_plane_rotation are ignored.
+
+    :param sym:                 Symmetry type. One of 'Cn' (n>2),'Dn' (n>1),'T','O','I'
     :param instack:             Name of MRC file containing the projections from which to estimate an ab-initio model.
     :param outvol:              Name (or path) of MRC file into which to save the reconstructed volume.
     :param rotation_resolution: (Optional) Number of samples per 2*pi  (see gen_rotations_grid for more details)
@@ -76,11 +83,17 @@ def cryo_abinitio_sym(
                                 2 * 360 / rotation_resolution.
     :param eta_p:               (Optional) Angle in degrees around the planes perpendicular to those axes; pairs
                                 with both views this close to such a plane are not allowed. Default 22.
+    :param cyclic_step:         (Optional) For 'Cn' only: spacing in degrees of the candidate grid. Must divide 180 an
+                                even number of times and be a multiple of 360 / n_theta. Default 5; the running time
+                                grows like cyclic_step^-5.
 
     :return:                    Estimated reconstruction of the volume (aspire Volume) and estimated rotations (np array),
                                 followed by the details dict if `return_details` is True
     """
     sym = supported_symmetry_group(sym) # Check provided symmetry type is valid
+    is_cyclic = sym[0] == "C"
+    if sym == "C2":
+        raise NotImplementedError("C2 is not supported. Supported cyclic groups are Cn with n > 2.")
     if basis not in ("FFB", "Dirac"):
         raise ValueError(f"basis must be 'FFB' or 'Dirac', got '{basis}'")
     outvol_folder_name = os.path.dirname(outvol)  # Extract folder from outvol path
@@ -93,27 +106,31 @@ def cryo_abinitio_sym(
     # Step 1: Cache file   #
     ########################
 
-    cache_file_name = (
-        ROTATIONS_CACHE_DIR / f"cache_{sym}_symmetry_resolution_{rotation_resolution}"
-        f"_ntheta_{n_theta}_view_direc_{viewing_direction}_in_plane_{in_plane_rotation}.pkl"
-    )
-    local_cache_exists = cache_file_name.exists()
-    if local_cache_exists:
-        logger.info(f"Using existing local cache found: {cache_file_name}\n")
-        check_cache_file(cache_file_name, sym, rotation_resolution, n_theta)
+    if is_cyclic:
+        cache_file_name = None
+        logger.info(f"{sym}: cyclic symmetry, no rotations cache is used\n")
     else:
-        logger.info(f"Creating cache file in folder: {cache_file_name.parent}\n")
-        cache_config = (
-            rotation_resolution,
-            n_theta,
-            viewing_direction,
-            in_plane_rotation,
+        cache_file_name = (
+            ROTATIONS_CACHE_DIR / f"cache_{sym}_symmetry_resolution_{rotation_resolution}"
+            f"_ntheta_{n_theta}_view_direc_{viewing_direction}_in_plane_{in_plane_rotation}.pkl"
         )
-        cache_file_name = cryo_create_rotations_cache(
-            sym,
-            cache_file_name,
-            cache_config,
-        )
+        local_cache_exists = cache_file_name.exists()
+        if local_cache_exists:
+            logger.info(f"Using existing local cache found: {cache_file_name}\n")
+            check_cache_file(cache_file_name, sym, rotation_resolution, n_theta)
+        else:
+            logger.info(f"Creating cache file in folder: {cache_file_name.parent}\n")
+            cache_config = (
+                rotation_resolution,
+                n_theta,
+                viewing_direction,
+                in_plane_rotation,
+            )
+            cache_file_name = cryo_create_rotations_cache(
+                sym,
+                cache_file_name,
+                cache_config,
+            )
 
     ###################################################################
     # Step 2: Load projections and downsample for rotation estimation #
@@ -143,45 +160,82 @@ def cryo_abinitio_sym(
         f"contains {pf_full.shape[1]} rays with {pf_full.shape[2]} coefficients.\n"
     )
 
-    ##############################################
-    # Step 4: Computing the relative rotations   #
-    ##############################################
-
-    logger.info("Computing all relative rotations...\n")
-
-    est_rel_rots = estimate_relative_rotations(
-        pf_full, cache_file_name, sym, true_rotations=true_rotations, eta=eta, eta_a=eta_a, eta_p=eta_p,
-    )
-    logger.info("Done computing the relative rotations\n")
-    logger.info(f"Upper block of relative rotations:\n\n{est_rel_rots[:14,:14]}\n\n")
-
-    if true_rotations is not None:
-        logger.info("Evaluating relative rotations against ground truth rotations...\n")
-        rel_rots_dists = angular_distance_rel_rots(est_rel_rots, true_rotations, sym, cache_file_name)
-        logger.info(f"Upper block of min angular distances: \n\n{rel_rots_dists[:14,:14]}\n\n")
-
-    ##################################
-    # Step 5: Rotation estimation    #
-    ##################################
-
-    logger.info("Estimating rotations")
-    rots, cache_selected_data = estimate_rotations(sym, cache_file_name, est_rel_rots, n_images, n_theta, pf_full)
-
-    ##########################################
-    # Step 6: Estimated rotations evaluation #
-    ##########################################
-
-    if true_rotations is not None:
-        logger.info("Comparing with known ground truth rotations")
-        rots = mean_angular_distance_sym(rots, true_rotations, sym)
-
-    logging.info(f"Cache selection data:\n {pd.DataFrame(cache_selected_data).T.to_string()}")
-
-    if gui:
+    if is_cyclic:
+        #####################################################################
+        # Steps 4-6 for C_n: pairwise maximization, vote, synchronization   #
+        #####################################################################
+        logger.info(f"Estimating rotations for {sym} (cryosym.cyclic)...\n")
+        rots, cn_info = estimate_rotations_cn(
+            pf_full, int(sym[1:]), step=cyclic_step, eta=eta, eta_a=eta_a, eta_p=eta_p,
+        )
+        logger.info(f"Votes of the winning orbit of each image (out of {n_images - 1}): {cn_info['count']}")
+        logger.info(
+            f"Leading eigenvalues of the synchronizations: handedness {np.round(cn_info['ev_J'], 2)}, "
+            f"half turn {np.round(cn_info['ev_F'], 2)}, angle {np.round(cn_info['ev_alpha'], 2)}"
+        )
         if true_rotations is not None:
-            create_projection_viewer_simulation(sym, cache_file_name, true_rotations, cache_selected_data)
-        else:
-            create_projection_viewer_class_avgs(sym, cache_file_name, projs.asnumpy(), cache_selected_data)
+            logger.info("Comparing with known ground truth rotations")
+            rots, errors, _ = register_cn(rots, np.asarray(true_rotations, dtype=float), int(sym[1:]))
+            logger.info(
+                f"Angular errors (deg) after registration: mean {errors.mean():.2f}, median {np.median(errors):.2f}, "
+                f"max {errors.max():.2f}"
+            )
+        if gui:
+            logger.warning("The projection viewer is not available for cyclic symmetry.")
+        details = {
+            "cache_file_name": None,
+            "est_rel_rots": cn_info["est"],
+            "pairs": cn_info["pairs"],
+            "voted_beta": cn_info["beta"],
+            "voted_gamma": cn_info["gamma"],
+            "vote_count": cn_info["count"],
+        }
+    else:
+        ##############################################
+        # Step 4: Computing the relative rotations   #
+        ##############################################
+
+        logger.info("Computing all relative rotations...\n")
+
+        est_rel_rots = estimate_relative_rotations(
+            pf_full, cache_file_name, sym, true_rotations=true_rotations, eta=eta, eta_a=eta_a, eta_p=eta_p,
+        )
+        logger.info("Done computing the relative rotations\n")
+        logger.info(f"Upper block of relative rotations:\n\n{est_rel_rots[:14,:14]}\n\n")
+
+        if true_rotations is not None:
+            logger.info("Evaluating relative rotations against ground truth rotations...\n")
+            rel_rots_dists = angular_distance_rel_rots(est_rel_rots, true_rotations, sym, cache_file_name)
+            logger.info(f"Upper block of min angular distances: \n\n{rel_rots_dists[:14,:14]}\n\n")
+
+        ##################################
+        # Step 5: Rotation estimation    #
+        ##################################
+
+        logger.info("Estimating rotations")
+        rots, cache_selected_data = estimate_rotations(sym, cache_file_name, est_rel_rots, n_images, n_theta, pf_full)
+
+        ##########################################
+        # Step 6: Estimated rotations evaluation #
+        ##########################################
+
+        if true_rotations is not None:
+            logger.info("Comparing with known ground truth rotations")
+            rots = mean_angular_distance_sym(rots, true_rotations, sym)
+
+        logging.info(f"Cache selection data:\n {pd.DataFrame(cache_selected_data).T.to_string()}")
+
+        if gui:
+            if true_rotations is not None:
+                create_projection_viewer_simulation(sym, cache_file_name, true_rotations, cache_selected_data)
+            else:
+                create_projection_viewer_class_avgs(sym, cache_file_name, projs.asnumpy(), cache_selected_data)
+
+        details = {
+            "cache_file_name": cache_file_name,
+            "est_rel_rots": est_rel_rots,
+            "cache_selected_inds": cache_selected_data["cache_selected_inds"],
+        }
 
     ##################################
     #  Step 7: Volume reconstruction #
@@ -213,10 +267,5 @@ def cryo_abinitio_sym(
     logger.info(f"Volume saved to file: {outvol}")
 
     if return_details:
-        details = {
-            "cache_file_name": cache_file_name,
-            "est_rel_rots": est_rel_rots,
-            "cache_selected_inds": cache_selected_data["cache_selected_inds"],
-        }
         return estimated_volume, rots, details
     return estimated_volume, rots

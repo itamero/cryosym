@@ -183,38 +183,39 @@ class CyclicGrid:
         jj = (self.B_self[:, None, :] - self.gamma_idx[None, :, None]) % self.n_theta
         return np.prod(np.maximum(self_corr[ii, jj], 0), axis=-1)
 
-    def pair_scores(self, corr):
+    def pair_scores(self, corr, r):
         """
-        Product of the n common line correlations of every candidate pair.
+        Product of the n common line correlations of every candidate pair with beta_r = beta[r].
 
         :param corr: (n_theta, n_theta) correlations between the rays of images i and j
-        :return: (n_br, n_gr, n_b, n_g, K)
+        :return: (n_gr, n_b, n_g, K)
         """
         n_theta = self.n_theta
         gr = self.gamma_idx[: self.n_gr]
         gs = self.gamma_idx
-        flat = corr.ravel()
-        out = np.empty((self.n_br, self.n_gr, self.n_b, self.n_g, self.K), dtype=corr.dtype)
-        for r in range(self.n_br):
-            ii = (self.A[r][None, :, None, :, :] - gr[:, None, None, None, None]) % n_theta  # (n_gr, n_b, 1, K, n)
-            jj = (self.B[r][None, :, None, :, :] - gs[None, None, :, None, None]) % n_theta  # (1, n_b, n_g, K, n)
-            vals = flat[ii * n_theta + jj]  # (n_gr, n_b, n_g, K, n)
-            np.maximum(vals, 0, out=vals)
-            out[r] = np.prod(vals, axis=-1)
-        return out
+        ii = (self.A[r][None, :, None, :, :] - gr[:, None, None, None, None]) % n_theta  # (n_gr, n_b, 1, K, n)
+        jj = (self.B[r][None, :, None, :, :] - gs[None, None, :, None, None]) % n_theta  # (1, n_b, n_g, K, n)
+        vals = corr.ravel()[ii * n_theta + jj]  # (n_gr, n_b, n_g, K, n)
+        np.maximum(vals, 0, out=vals)
+        return np.prod(vals, axis=-1)
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Step 1: pairwise maximization
 # ---------------------------------------------------------------------------------------------------------------------
 def _pair_argmax(grid, pf_i, pf_j, s_i, s_j):
+    """Maximizer of the score of one pair of images, one value of beta_r at a time to bound the memory."""
     corr = np.real(pf_i.conj() @ pf_j.T)
-    score = grid.pair_scores(corr)
-    score *= s_i[: grid.n_br, : grid.n_gr, None, None, None]
-    score *= s_j[None, None, :, :, None]
-    score[~np.broadcast_to(grid.mask[:, None, :, None, :], score.shape)] = -1
-    best = np.unravel_index(np.argmax(score), score.shape)
-    return best + (float(score[best]),)
+    best, best_score = None, -np.inf
+    for r in range(grid.n_br):
+        score = grid.pair_scores(corr, r)
+        score *= s_i[r, : grid.n_gr, None, None, None]
+        score *= s_j[None, :, :, None]
+        score -= 2 * ~grid.mask[r][None, :, None, :]  # scores are at most 1, so the excluded candidates are negative
+        k = np.argmax(score)
+        if score.flat[k] > best_score:
+            best, best_score = (r,) + np.unravel_index(k, score.shape), float(score.flat[k])
+    return best + (best_score,)
 
 
 def pairwise_estimates(pf, grid, n_jobs=-1):
@@ -382,12 +383,20 @@ def polar_ft(images, n_theta=360, n_r_perc=50, radial_power=0.0):
 
 def estimate_rotations_cn(pf, n, step=5.0, eta=1.0, eta_a=None, eta_p=22.0, n_jobs=-1, refine_vote=True):
     """
-    Estimate the orientations of images of a C_n symmetric molecule, up to the symmetry, normalizer and handedness
-    ambiguities.
+    Estimate the orientations of images of a C_n symmetric molecule, n >= 3, up to the symmetry, normalizer and
+    handedness ambiguities.
 
     :param pf: (n_images, n_theta, n_r) polar Fourier transforms (polar_ft)
+    :param n: Order of the cyclic group
+    :param step: Spacing in degrees of the candidate grid (see CyclicGrid). The number of candidate pairs, and the
+                 running time, grow like step^-5.
+    :param eta, eta_a, eta_p: Angles in degrees of the excluded candidates (see CyclicGrid)
     :return: Rotations (n_images, 3, 3) and a dict of the intermediate results
     """
+    if n < 3:
+        raise NotImplementedError(
+            "C2 is not supported: with two common lines per pair of images the pairwise maximization is not reliable."
+        )
     n_images, n_theta = pf.shape[0], pf.shape[1]
     grid = CyclicGrid(n, n_theta, step, eta, eta_a, eta_p)
     est, scores, pairs, s_self = pairwise_estimates(pf, grid, n_jobs)

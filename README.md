@@ -10,7 +10,7 @@ CryoSym supports the following point-group symmetries:
 
 | Family | Groups | Order | Description |
 |-----|--------|-------|-------------|
-| $C_n$ [NOT YET] | $C_2, C_3, C_4, \ldots$ | $n$ | Cyclic ($n$-fold rotational, $n > 1$) |
+| $C_n$ | $C_3, C_4, C_5, \ldots$ | $n$ | Cyclic ($n$-fold rotational, $n > 2$; $C_2$ is not supported) |
 | $D_n$ | $D_2, D_3, D_4, \ldots$ | $2n$ | Dihedral ($n > 1$) |
 | $T$ | $T$ | $12$ | Tetrahedral |
 | $O$ | $O$ | $24$ | Octahedral |
