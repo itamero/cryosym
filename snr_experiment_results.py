@@ -10,7 +10,8 @@ taken modulo G: d_G(X, Y) = min_g angle(X^T g Y). With a tolerance eta_v, the co
     votes:          fraction of images whose voted rotation is within eta_v of R_i after some a in A
     median err:     median final error, after the global alignment over A done by cryo_abinitio_sym
     <5 deg, <3 deg: fraction of images with final error below 5 and 3 degrees (<3 deg only in the csv and the log)
-    FSC:            resolution (Angstrom) at FSC = 0.5 between the reconstruction and the true volume
+    FSC:            resolution (Angstrom) at FSC = 0.5 between the reconstruction and the true volume, where the curve
+                    interpolated between shells crosses 0.5 (cryosym.fsc, EMalign's implementation)
     time:           wall-clock seconds of the cryo_abinitio_sym call, orientation estimation and reconstruction, from
                     the stored grid and common lines tables (building them is not included) to the saved volume; the
                     evaluation of the other columns is not included. With --jobs > 1 the groups share the CPU, so
@@ -56,6 +57,7 @@ import pandas as pd
 
 from cryosym.ab_initio_sym import cryo_abinitio_sym
 from cryosym.config import SNR_EXPERIMENT_DIR
+from cryosym.fsc import fsc_resolution
 from cryosym.group_elements import coset_representatives, group_elements
 from snr_experiment import (
     N_IMGS, N_POOL, SNRS, SYMS, group_name, group_seed, load_seeds, load_volume, noise_seed, rotations_file,
@@ -273,7 +275,6 @@ def snr_experiment_results(
 
         # rots are already aligned to R_true over A by cryo_abinitio_sym
         errors = dist_mod_G(rots, R_true, group_elements(sym))
-        fsc_resolution, _ = true_vol.astype(est_vol.dtype).fsc(est_vol, cutoff=0.5)
 
         rows.append({
             "snr": snr,
@@ -282,7 +283,7 @@ def snr_experiment_results(
             "median_err": np.median(errors),
             "below_5": np.mean(errors < 5),
             "below_3": np.mean(errors < 3),
-            "fsc": float(np.atleast_1d(fsc_resolution)[0]),
+            "fsc": fsc_resolution(true_vol, est_vol),
             "time": elapsed,
         })
         # Per image: the estimated rotations and their errors, for figures that need more than the table

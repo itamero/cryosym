@@ -21,3 +21,16 @@ data/**/*.png
 
 # SNR experiment outputs (simulated stacks, figures, runs)
 data/snr_experiment/
+
+# Experiment and figure outputs
+data/class_averages_figures/
+data/cn_experiment/
+data/reconstructed_volumes/*
+!data/reconstructed_volumes/.gitkeep
+*.map.gz
+
+# Thesis-only scripts
+class_averages_figures.py
+snr_experiment_fsc.py
+cn_experiment.py
+cn_results.py

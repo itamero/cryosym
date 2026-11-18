@@ -9,6 +9,7 @@ from aspire.volume import Volume
 
 from cryosym.group_elements import group_elements
 from cryosym.config import PROJECTIONS_DIR, RECONSTRUCTED_VOLUMES_DIR
+from cryosym.fsc import plot_fsc
 from cryosym.utils import show
 from cryosym.ab_initio_sym import cryo_abinitio_sym
 from cryosym.volume_download.data_downloader import data_downloader
@@ -135,7 +136,7 @@ def ab_initio_simulation_demo(
 
     # Save FSC plot into the output directory
     fsc_plot_path = output_dir / "fsc_plot.png"
-    fsc, _ = estimated_volume.fsc(ds_v, cutoff=0.5, plot=str(fsc_plot_path))
+    fsc = plot_fsc(ds_v, estimated_volume, cutoff=0.5, path=fsc_plot_path)
 
     logger.info(
         f"Estimated FSC {fsc} Angstroms at {ds_v.pixel_size} Angstrom per pixel."
